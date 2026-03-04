@@ -600,7 +600,22 @@ async function refresh() {
     const avgLat = nLat ? sumLat / nLat : null;
     const avgJitter = nJitter ? sumJitter / nJitter : null;
     const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
-    const uptimePct = allEnabled.length ? okCount / allEnabled.length * 100 : null;
+
+    // Time-based uptime: per-host, then averaged across enabled hosts.
+    // Sleep gaps inflate expectedSlots for each host, correctly lowering uptime.
+    let uptimePct = null;
+    {
+      let sumUptime = 0, countHosts = 0;
+      for (const addr of enabledHosts) {
+        const pts = byHost[addr];
+        if (!pts || !pts.length) continue;
+        const hostOk = pts.filter(s => s.loss_pct < 100).length;
+        const hExpected = (pts[pts.length - 1].ts - pts[0].ts + intervalSeconds) / intervalSeconds;
+        sumUptime += Math.min(100, hostOk / hExpected * 100);
+        countHosts++;
+      }
+      if (countHosts) uptimePct = sumUptime / countHosts;
+    }
 
     const elLat = document.getElementById('cardLatency');
     const elLoss = document.getElementById('cardLoss');
