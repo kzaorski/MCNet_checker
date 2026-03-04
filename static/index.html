@@ -477,6 +477,7 @@ document.getElementById('saveApiHostBtn').addEventListener('click', () => {
 // --- State ---
 let refreshTimer = null;
 let sessionTitle = 'MCNet checker';
+let intervalSeconds = 60;
 
 async function fetchStatus() {
   try {
@@ -485,6 +486,7 @@ async function fetchStatus() {
     sessionTitle = d.session.replace('MCNet_checker_', 'MCNet checker ');
     document.getElementById('title').textContent = sessionTitle;
     document.title = sessionTitle;
+    if (d.config?.interval_seconds) intervalSeconds = d.config.interval_seconds;
   } catch (_) {}
 }
 
@@ -552,7 +554,13 @@ async function refresh() {
     const avgLat = nLat ? sumLat / nLat : null;
     const avgJitter = nJitter ? sumJitter / nJitter : null;
     const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
-    const uptimePct = allEnabled.length ? okCount / allEnabled.length * 100 : null;
+
+    // Time-based uptime: count expected slots from first to last sample timestamp.
+    // Gaps caused by sleep/restart inflate expectedSlots and lower uptime correctly.
+    const firstTs = allEnabled[0].ts;
+    const lastTs = allEnabled[allEnabled.length - 1].ts;
+    const expectedSlots = (lastTs - firstTs + intervalSeconds) / intervalSeconds;
+    const uptimePct = allEnabled.length ? Math.min(100, okCount / expectedSlots * 100) : null;
 
     const elLat = document.getElementById('cardLatency');
     const elLoss = document.getElementById('cardLoss');
