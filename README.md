@@ -50,6 +50,14 @@ Open **http://127.0.0.1:8000** in your browser. The first sample is collected im
 
 The UI supports **light, dark, and system** themes — toggle via the button in the top-right corner. All configured hosts are pinged simultaneously on every interval tick, and each host can be shown or hidden using the checkboxes in the UI.
 
+### Time range
+
+Select a preset range (15 min, 30 min, 1 h … 7 d) or choose **Custom…** to enter explicit start and end timestamps. The chart and all KPI cards update to reflect the selected window.
+
+### Drag-to-zoom
+
+Click and drag horizontally on the chart to zoom into a specific time range. The zoomed range is automatically fetched from the API and the KPI cards update accordingly. A **Reset zoom** button returns the view to **Last 1 h**.
+
 ## API Reference
 
 ### `GET /api/v1/samples`
@@ -133,7 +141,7 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/hosts/1.1.1.1 \
 | **Latency**   | Round-trip time in milliseconds. Higher = slower connection.         |
 | **Packet loss** | % of ping packets that never returned. >1% indicates problems.    |
 | **Jitter**    | Standard deviation of round-trip times. High jitter hurts VoIP/video.|
-| **Uptime**    | % of samples with <100% packet loss over the selected time window.   |
+| **Uptime**    | Time-based: ratio of good intervals to expected intervals in the window. Sleep gaps lower uptime correctly. Averaged across checked hosts only. |
 
 ## Data Management
 
