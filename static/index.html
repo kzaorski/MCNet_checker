@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCNet checker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --border:    #334155;
+      --border2:   #475569;
+      --text:      #e2e8f0;
+      --muted:     #94a3b8;
+      --subtle:    #64748b;
+      --accent:    #38bdf8;
+      --btn-bg:    #0f3460;
+      --btn-hover: #164e80;
+      --grid-bg:   #1e293b;
+      --grid-line: #334155;
+    }
+    [data-theme="light"] {
+      --bg:        #f1f5f9;
+      --surface:   #ffffff;
+      --border:    #e2e8f0;
+      --border2:   #cbd5e1;
+      --text:      #0f172a;
+      --muted:     #475569;
+      --subtle:    #64748b;
+      --accent:    #0284c7;
+      --btn-bg:    #e0f2fe;
+      --btn-hover: #bae6fd;
+      --grid-bg:   #f8fafc;
+      --grid-line: #e2e8f0;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+    header .meta { font-size: 0.8rem; color: var(--muted); }
+    header .meta span { margin-left: 16px; }
+    /* Hosts panel */
+    .hosts-panel {
+      margin: 12px 20px 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .hosts-panel-inner {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 10px 14px;
+    }
+    .hosts-panel-title {
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--subtle); white-space: nowrap; margin-right: 4px;
+    }
+    .hosts-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+    .host-row {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 6px; padding: 4px 8px; font-size: 0.82rem;
+    }
+    .host-check { cursor: pointer; accent-color: var(--accent); }
+    .host-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .host-address { color: var(--text); }
+    .host-latency { color: var(--muted); font-size: 0.76rem; min-width: 50px; }
+    .hosts-add { display: flex; gap: 6px; align-items: center; }
+    .hosts-add input { width: 160px; }
+    .cards {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      padding: 12px 20px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 18px;
+    }
+    .card .label { font-size: 0.72rem; color: var(--subtle); text-transform: uppercase; letter-spacing: .04em; }
+    .card .value { font-size: 1.7rem; font-weight: 700; margin-top: 4px; }
+    .card .value.good { color: #4ade80; }
+    .card .value.warn { color: #facc15; }
+    .card .value.bad  { color: #f87171; }
+    .chart-wrap {
+      margin: 0 20px 16px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px; position: relative; height: 340px;
+    }
+    .controls {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+      padding: 0 20px 20px;
+    }
+    .controls label { font-size: 0.82rem; color: var(--muted); }
+    select, input[type="number"], input[type="text"], button {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border2);
+      border-radius: 6px; padding: 6px 10px; font-size: 0.82rem; outline: none;
+    }
+    select:focus, input:focus { border-color: var(--accent); }
+    button {
+      cursor: pointer; background: var(--btn-bg); border-color: var(--accent); color: var(--accent);
+      transition: background .15s;
+    }
+    button:hover { background: var(--btn-hover); }
+    button.danger { background: #450a0a; border-color: #f87171; color: #f87171; }
+    button.danger:hover { background: #7f1d1d; }
+    [data-theme="light"] button.danger { background: #fee2e2; color: #dc2626; border-color: #dc2626; }
+    [data-theme="light"] button.danger:hover { background: #fecaca; }
+    .sep { width: 1px; height: 28px; background: var(--border); }
+    #statusMsg { font-size: 0.78rem; color: var(--subtle); margin-left: auto; }
+    .mode-btns { display: flex; margin-left: 12px; }
+    .mode-btns button { padding: 4px 10px; font-size: 1rem; border-radius: 0; border-right-width: 0; margin: 0; }
+    .mode-btns button:first-child { border-radius: 6px 0 0 6px; }
+    .mode-btns button:last-child { border-radius: 0 6px 6px 0; border-right-width: 1px; }
+    .mode-btns button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    #settingsPanel {
+      margin: 12px 20px 0; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 20px; display: flex; align-items: center;
+      flex-wrap: wrap; gap: 12px;
+    }
+    #settingsPanel label { font-size: 0.82rem; color: var(--muted); }
+    #settingsStatus { font-size: 0.78rem; color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1 id="title">MCNet checker</h1>
+  <div class="meta">
+    <span id="updatedLabel"></span>
+  </div>
+  <div class="mode-btns" id="modeBtns">
+    <button data-mode="light">☀️</button>
+    <button data-mode="dark">🌙</button>
+    <button data-mode="system">🖥️</button>
+    <button data-mode="settings">⚙️</button>
+  </div>
+</header>
+
+<section id="settingsPanel" style="display:none">
+  <span style="font-size:0.75rem; text-transform:uppercase; letter-spacing:.05em; color:var(--subtle);">Settings</span>
+  <label>API Host:
+    <input type="text" id="apiHostInput" placeholder="http://192.168.1.x:8000" style="width:220px; margin-left:6px;" />
+  </label>
+  <button id="saveApiHostBtn">Save</button>
+  <span id="settingsStatus"></span>
+</section>
+
+<section class="hosts-panel" id="hostsPanel">
+  <div class="hosts-panel-inner">
+    <span class="hosts-panel-title">Monitored Hosts</span>
+    <div id="hostsList" class="hosts-list"></div>
+    <div class="hosts-add">
+      <input type="text" id="addHostInput" placeholder="hostname or IP" />
+      <button id="addHostBtn">+ Add</button>
+    </div>
+  </div>
+</section>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Avg Latency</div>
+    <div class="value" id="cardLatency">—</div>
+  </div>
+  <div class="card">
+    <div class="label">Packet Loss</div>
+    <div class="value" id="cardLoss">—</div>
+  </div>
+  <div class="card">
+    <div class="label">Jitter</div>
+    <div class="value" id="cardJitter">—</div>
+  </div>
+  <div class="card">
+    <div class="label">Uptime (window)</div>
+    <div class="value" id="cardUptime">—</div>
+  </div>
+</div>
+
+<div class="chart-wrap">
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="controls">
+  <label>Range:
+    <select id="rangeSelect">
+      <option value="1">Last 1h</option>
+      <option value="3">Last 3h</option>
+      <option value="6">Last 6h</option>
+      <option value="12">Last 12h</option>
+      <option value="24" selected>Last 24h</option>
+      <option value="72">Last 3d</option>
+      <option value="168">Last 7d</option>
+    </select>
+  </label>
+  <label>Refresh:
+    <select id="refreshSelect">
+      <option value="10">10s</option>
+      <option value="30" selected>30s</option>
+      <option value="60">60s</option>
+      <option value="0">Off</option>
+    </select>
+  </label>
+  <div class="sep"></div>
+  <label>Delete samples older than:
+    <input type="number" id="deleteHours" min="1" placeholder="hours" style="width:80px" />
+  </label>
+  <button class="danger" id="deleteBtn">Delete</button>
+  <span id="statusMsg"></span>
+</div>
+
+<script>
+const HOST_COLORS = ['#38bdf8','#4ade80','#fb923c','#a78bfa','#f472b6','#facc15'];
+
+const fmt = {
+  ts: t => new Date(t * 1000),
+  latency: v => v != null ? v.toFixed(1) + ' ms' : 'N/A',
+  loss: v => v != null ? v.toFixed(1) + ' %' : 'N/A',
+  jitter: v => v != null ? v.toFixed(1) + ' ms' : 'N/A',
+  uptime: v => v != null ? v.toFixed(1) + ' %' : 'N/A',
+};
+
+function colorClass(el, val, warnThresh, badThresh, invert = false) {
+  el.className = 'value';
+  if (val == null) return;
+  const bad = invert ? val < badThresh : val > badThresh;
+  const warn = invert ? val < warnThresh : val > warnThresh;
+  el.classList.add(bad ? 'bad' : warn ? 'warn' : 'good');
+}
+
+// --- Chart setup ---
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+  data: { datasets: [] },
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: {
+        type: 'time',
+        ticks: { color: '#64748b', maxTicksLimit: 10 },
+        grid: { color: '#1e293b' },
+      },
+      yMs: {
+        position: 'left',
+        title: { display: true, text: 'ms', color: '#64748b' },
+        ticks: { color: '#64748b' },
+        grid: { color: '#334155' },
+        min: 0,
+      },
+      yPct: {
+        position: 'right',
+        title: { display: true, text: '%', color: '#64748b' },
+        ticks: { color: '#64748b' },
+        grid: { drawOnChartArea: false },
+        min: 0, max: 100,
+      },
+    },
+    plugins: {
+      legend: { labels: { color: '#94a3b8', boxWidth: 16 } },
+      tooltip: {
+        callbacks: {
+          title: items => new Date(items[0].parsed.x).toLocaleString(),
+        },
+      },
+    },
+  },
+});
+
+// --- Hosts state ---
+let hostsState = {};  // address → {enabled, color, lastLatency}
+let hostsList = [];
+
+function getHostColor(address) {
+  const keys = Object.keys(hostsState);
+  const idx = keys.indexOf(address);
+  return HOST_COLORS[idx % HOST_COLORS.length];
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function buildDatasets() {
+  const datasets = [];
+  for (const [address, state] of Object.entries(hostsState)) {
+    if (!state.enabled) continue;
+    const color = state.color;
+    datasets.push({
+      type: 'line',
+      label: `Latency – ${address}`,
+      data: [],
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 2,
+      yAxisID: 'yMs',
+      tension: 0.3,
+      _host: address,
+      _metric: 'latency',
+    });
+    datasets.push({
+      type: 'line',
+      label: `Jitter – ${address}`,
+      data: [],
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [5, 4],
+      pointRadius: 1,
+      yAxisID: 'yMs',
+      tension: 0.3,
+      _host: address,
+      _metric: 'jitter',
+    });
+    datasets.push({
+      type: 'bar',
+      label: `Loss – ${address}`,
+      data: [],
+      backgroundColor: hexToRgba(color, 0.45),
+      borderColor: color,
+      borderWidth: 1,
+      yAxisID: 'yPct',
+      barPercentage: 0.9,
+      categoryPercentage: 1.0,
+      _host: address,
+      _metric: 'loss',
+    });
+  }
+  chart.data.datasets = datasets;
+}
+
+function renderHostsList() {
+  const container = document.getElementById('hostsList');
+  container.innerHTML = '';
+  for (const h of hostsList) {
+    const color = hostsState[h.address]?.color || HOST_COLORS[0];
+    const latency = hostsState[h.address]?.lastLatency;
+    const latText = latency != null ? latency.toFixed(1) + ' ms' : '—';
+
+    const row = document.createElement('div');
+    row.className = 'host-row';
+    row.dataset.address = h.address;
+    row.innerHTML = `
+      <input type="checkbox" class="host-check" ${h.enabled ? 'checked' : ''} />
+      <span class="host-dot" style="background:${color}"></span>
+      <span class="host-address">${h.address}</span>
+      <span class="host-latency">${latText}</span>
+      <button class="host-remove danger" title="Remove">✕</button>
+    `;
+
+    row.querySelector('.host-check').addEventListener('change', async (e) => {
+      await fetch(getApiBase() + `/api/v1/hosts/${encodeURIComponent(h.address)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: e.target.checked }),
+      });
+      await fetchHosts();
+      await refresh();
+    });
+
+    row.querySelector('.host-remove').addEventListener('click', async () => {
+      if (!confirm(`Remove host "${h.address}"?\nHistorical data is kept.`)) return;
+      await fetch(getApiBase() + `/api/v1/hosts/${encodeURIComponent(h.address)}`, { method: 'DELETE' });
+      await fetchHosts();
+      await refresh();
+    });
+
+    container.appendChild(row);
+  }
+}
+
+async function fetchHosts() {
+  const r = await fetch(getApiBase() + '/api/v1/hosts');
+  hostsList = await r.json();
+  // Rebuild hostsState, preserving colors assigned by index
+  const newState = {};
+  hostsList.forEach((h, i) => {
+    newState[h.address] = {
+      enabled: !!h.enabled,
+      color: HOST_COLORS[i % HOST_COLORS.length],
+      lastLatency: hostsState[h.address]?.lastLatency ?? null,
+    };
+  });
+  hostsState = newState;
+  renderHostsList();
+}
+
+// --- Theme ---
+const root = document.documentElement;
+
+function getChartColors() {
+  const st = getComputedStyle(root);
+  return {
+    subtle:   st.getPropertyValue('--subtle').trim(),
+    muted:    st.getPropertyValue('--muted').trim(),
+    gridBg:   st.getPropertyValue('--grid-bg').trim(),
+    gridLine: st.getPropertyValue('--grid-line').trim(),
+  };
+}
+
+function updateChartTheme() {
+  const c = getChartColors();
+  const { scales, plugins } = chart.options;
+  scales.x.ticks.color = c.subtle;
+  scales.x.grid.color = c.gridBg;
+  scales.yMs.ticks.color = c.subtle;
+  scales.yMs.title.color = c.subtle;
+  scales.yMs.grid.color = c.gridLine;
+  scales.yPct.ticks.color = c.subtle;
+  scales.yPct.title.color = c.subtle;
+  plugins.legend.labels.color = c.muted;
+  chart.update('none');
+}
+
+function getApiBase() {
+  return localStorage.getItem('apiHost') || '';
+}
+
+const _mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+function applyTheme(theme) {
+  root.setAttribute('data-theme', theme);
+  updateChartTheme();
+}
+
+function _osTheme() {
+  return _mq.matches ? 'dark' : 'light';
+}
+
+function setMode(mode) {
+  const panel = document.getElementById('settingsPanel');
+  document.querySelectorAll('#modeBtns button').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  if (mode === 'settings') {
+    panel.style.display = '';
+    document.getElementById('apiHostInput').value = localStorage.getItem('apiHost') || '';
+    return;
+  }
+  panel.style.display = 'none';
+  if (mode === 'system') {
+    localStorage.removeItem('mode');
+    applyTheme(_osTheme());
+  } else {
+    localStorage.setItem('mode', mode);
+    applyTheme(mode);
+  }
+}
+
+function initMode() {
+  const saved = localStorage.getItem('mode');
+  const mode = (saved === 'light' || saved === 'dark') ? saved : 'system';
+  setMode(mode);
+}
+
+_mq.addEventListener('change', () => {
+  if (!localStorage.getItem('mode')) applyTheme(_osTheme());
+});
+
+document.getElementById('modeBtns').addEventListener('click', e => {
+  const btn = e.target.closest('[data-mode]');
+  if (btn) setMode(btn.dataset.mode);
+});
+
+document.getElementById('saveApiHostBtn').addEventListener('click', () => {
+  const val = document.getElementById('apiHostInput').value.trim();
+  localStorage.setItem('apiHost', val);
+  document.getElementById('settingsStatus').textContent = 'Saved. Reload to apply.';
+});
+
+// --- State ---
+let refreshTimer = null;
+let sessionTitle = 'MCNet checker';
+
+async function fetchStatus() {
+  try {
+    const r = await fetch(getApiBase() + '/api/v1/status');
+    const d = await r.json();
+    sessionTitle = d.session.replace('MCNet_checker_', 'MCNet checker ');
+    document.getElementById('title').textContent = sessionTitle;
+    document.title = sessionTitle;
+  } catch (_) {}
+}
+
+async function refresh() {
+  const hours = parseFloat(document.getElementById('rangeSelect').value);
+
+  try {
+    const r = await fetch(getApiBase() + `/api/v1/samples?hours=${hours}`);
+    const samples = await r.json();
+
+    if (!samples.length) {
+      document.getElementById('updatedLabel').textContent = 'No data yet';
+      buildDatasets();
+      chart.update('none');
+      return;
+    }
+
+    // Group by host
+    const byHost = {};
+    for (const s of samples) {
+      if (!byHost[s.host]) byHost[s.host] = [];
+      byHost[s.host].push(s);
+    }
+
+    // Update lastLatency in hostsState
+    for (const [addr, pts] of Object.entries(byHost)) {
+      if (hostsState[addr]) {
+        const last = pts[pts.length - 1];
+        hostsState[addr].lastLatency = last.avg_ms;
+      }
+    }
+    renderHostsList();
+
+    // Build/update datasets
+    buildDatasets();
+    for (const ds of chart.data.datasets) {
+      const pts = byHost[ds._host] || [];
+      if (ds._metric === 'latency') {
+        ds.data = pts.map(s => ({ x: fmt.ts(s.ts), y: s.avg_ms }));
+      } else if (ds._metric === 'jitter') {
+        ds.data = pts.map(s => ({ x: fmt.ts(s.ts), y: s.jitter_ms }));
+      } else {
+        ds.data = pts.map(s => ({ x: fmt.ts(s.ts), y: s.loss_pct }));
+      }
+    }
+    chart.update('none');
+
+    // KPI cards — aggregate all enabled hosts
+    const enabledHosts = Object.entries(hostsState)
+      .filter(([, st]) => st.enabled)
+      .map(([addr]) => addr);
+
+    const allEnabled = samples.filter(s => enabledHosts.includes(s.host));
+    if (!allEnabled.length) {
+      document.getElementById('updatedLabel').textContent = 'No data yet';
+      return;
+    }
+
+    let sumLat = 0, nLat = 0, sumJitter = 0, nJitter = 0, okCount = 0;
+    for (const s of allEnabled) {
+      if (s.avg_ms != null) { sumLat += s.avg_ms; nLat++; }
+      if (s.jitter_ms != null) { sumJitter += s.jitter_ms; nJitter++; }
+      if (s.loss_pct < 100) okCount++;
+    }
+    const avgLat = nLat ? sumLat / nLat : null;
+    const avgJitter = nJitter ? sumJitter / nJitter : null;
+    const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
+    const uptimePct = allEnabled.length ? okCount / allEnabled.length * 100 : null;
+
+    const elLat = document.getElementById('cardLatency');
+    const elLoss = document.getElementById('cardLoss');
+    const elJitter = document.getElementById('cardJitter');
+    const elUptime = document.getElementById('cardUptime');
+
+    elLat.textContent = fmt.latency(avgLat);
+    elLoss.textContent = fmt.loss(lastLoss);
+    elJitter.textContent = fmt.jitter(avgJitter);
+    elUptime.textContent = fmt.uptime(uptimePct);
+
+    colorClass(elLat, avgLat, 50, 150);
+    colorClass(elLoss, lastLoss, 1, 10);
+    colorClass(elJitter, avgJitter, 10, 30);
+    colorClass(elUptime, uptimePct, 99, 95, true);
+
+    document.getElementById('updatedLabel').textContent =
+      'Updated: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('statusMsg').textContent = 'Fetch error: ' + e.message;
+  }
+}
+
+function scheduleRefresh() {
+  clearInterval(refreshTimer);
+  const secs = parseInt(document.getElementById('refreshSelect').value);
+  if (secs > 0) refreshTimer = setInterval(refresh, secs * 1000);
+}
+
+document.getElementById('rangeSelect').addEventListener('change', refresh);
+document.getElementById('refreshSelect').addEventListener('change', scheduleRefresh);
+
+document.getElementById('deleteBtn').addEventListener('click', async () => {
+  const hours = parseFloat(document.getElementById('deleteHours').value);
+  if (!hours || hours <= 0) {
+    document.getElementById('statusMsg').textContent = 'Enter a valid number of hours.';
+    return;
+  }
+  const before = Date.now() / 1000 - hours * 3600;
+  const msg = document.getElementById('statusMsg');
+  try {
+    const r = await fetch(getApiBase() + `/api/v1/samples?before=${before}`, { method: 'DELETE' });
+    const d = await r.json();
+    msg.textContent = `Deleted ${d.deleted} samples.`;
+    refresh();
+  } catch (e) {
+    msg.textContent = 'Delete error: ' + e.message;
+  }
+});
+
+document.getElementById('addHostBtn').addEventListener('click', async () => {
+  const input = document.getElementById('addHostInput');
+  const address = input.value.trim();
+  if (!address) return;
+  const msg = document.getElementById('statusMsg');
+  try {
+    const r = await fetch(getApiBase() + '/api/v1/hosts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    if (r.status === 409) {
+      msg.textContent = `Host "${address}" already exists.`;
+      return;
+    }
+    if (!r.ok) {
+      msg.textContent = 'Error adding host.';
+      return;
+    }
+    input.value = '';
+    msg.textContent = '';
+    await fetchHosts();
+    await refresh();
+  } catch (e) {
+    msg.textContent = 'Add error: ' + e.message;
+  }
+});
+
+document.getElementById('addHostInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('addHostBtn').click();
+});
+
+// Init
+async function init() {
+  await fetchStatus();
+  await fetchHosts();
+  await refresh();
+  scheduleRefresh();
+  initMode();
+}
+
+init();
+</script>
+</body>
+</html>
