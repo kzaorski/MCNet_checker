@@ -555,12 +555,21 @@ async function refresh() {
     const avgJitter = nJitter ? sumJitter / nJitter : null;
     const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
 
-    // Time-based uptime: count expected slots from first to last sample timestamp.
-    // Gaps caused by sleep/restart inflate expectedSlots and lower uptime correctly.
-    const firstTs = allEnabled[0].ts;
-    const lastTs = allEnabled[allEnabled.length - 1].ts;
-    const expectedSlots = (lastTs - firstTs + intervalSeconds) / intervalSeconds;
-    const uptimePct = allEnabled.length ? Math.min(100, okCount / expectedSlots * 100) : null;
+    // Time-based uptime: per-host, then averaged across enabled hosts.
+    // Sleep gaps inflate expectedSlots for each host, correctly lowering uptime.
+    let uptimePct = null;
+    {
+      let sumUptime = 0, countHosts = 0;
+      for (const addr of enabledHosts) {
+        const pts = byHost[addr];
+        if (!pts || !pts.length) continue;
+        const hostOk = pts.filter(s => s.loss_pct < 100).length;
+        const hExpected = (pts[pts.length - 1].ts - pts[0].ts + intervalSeconds) / intervalSeconds;
+        sumUptime += Math.min(100, hostOk / hExpected * 100);
+        countHosts++;
+      }
+      if (countHosts) uptimePct = sumUptime / countHosts;
+    }
 
     const elLat = document.getElementById('cardLatency');
     const elLoss = document.getElementById('cardLoss');
