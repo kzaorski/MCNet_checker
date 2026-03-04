@@ -294,6 +294,7 @@ const chart = new Chart(ctx, {
             document.getElementById('rangeSelect').value = 'custom';
             document.getElementById('customRange').classList.remove('custom-range-hidden');
             document.getElementById('resetZoomBtn').style.display = '';
+            refresh();
           },
         },
       },
@@ -591,6 +592,13 @@ async function refresh() {
       return;
     }
 
+    // Per-host lookup built exclusively from enabled-host samples.
+    const byEnabled = {};
+    for (const s of allEnabled) {
+      if (!byEnabled[s.host]) byEnabled[s.host] = [];
+      byEnabled[s.host].push(s);
+    }
+
     let sumLat = 0, nLat = 0, sumJitter = 0, nJitter = 0, okCount = 0;
     for (const s of allEnabled) {
       if (s.avg_ms != null) { sumLat += s.avg_ms; nLat++; }
@@ -601,16 +609,28 @@ async function refresh() {
     const avgJitter = nJitter ? sumJitter / nJitter : null;
     const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
 
-    // Time-based uptime: per-host, then averaged across enabled hosts.
-    // Sleep gaps inflate expectedSlots for each host, correctly lowering uptime.
+    // Time-based uptime: per-host (checked hosts only), then averaged.
+    // For preset ranges: window = first..last sample (don't penalize pre-monitoring time).
+    // For custom range: window = user-chosen since..until (gaps at edges count as downtime).
+    let windowSince = null, windowUntil = null;
+    if (customMode) {
+      const from = document.getElementById('rangeFrom').value;
+      const to   = document.getElementById('rangeTo').value;
+      if (from && to) {
+        windowSince = new Date(from).getTime() / 1000;
+        windowUntil = new Date(to).getTime() / 1000;
+      }
+    }
     let uptimePct = null;
     {
       let sumUptime = 0, countHosts = 0;
       for (const addr of enabledHosts) {
-        const pts = byHost[addr];
+        const pts = byEnabled[addr];
         if (!pts || !pts.length) continue;
         const hostOk = pts.filter(s => s.loss_pct < 100).length;
-        const hExpected = (pts[pts.length - 1].ts - pts[0].ts + intervalSeconds) / intervalSeconds;
+        const since = windowSince ?? pts[0].ts;
+        const until = windowUntil ?? pts[pts.length - 1].ts;
+        const hExpected = (until - since + intervalSeconds) / intervalSeconds;
         sumUptime += Math.min(100, hostOk / hExpected * 100);
         countHosts++;
       }
