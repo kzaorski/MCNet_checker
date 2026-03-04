@@ -6,6 +6,8 @@
   <title>MCNet checker</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     :root {
       --bg:        #0f172a;
@@ -121,6 +123,8 @@
     }
     #settingsPanel label { font-size: 0.82rem; color: var(--muted); }
     #settingsStatus { font-size: 0.78rem; color: var(--accent); }
+    .custom-range-hidden { display: none !important; }
+    #customRange { display: flex; }
   </style>
 </head>
 <body>
@@ -184,6 +188,8 @@
 <div class="controls">
   <label>Range:
     <select id="rangeSelect">
+      <option value="0.25">Last 15min</option>
+      <option value="0.5">Last 30min</option>
       <option value="1">Last 1h</option>
       <option value="3">Last 3h</option>
       <option value="6">Last 6h</option>
@@ -191,8 +197,16 @@
       <option value="24" selected>Last 24h</option>
       <option value="72">Last 3d</option>
       <option value="168">Last 7d</option>
+      <option value="custom">Custom…</option>
     </select>
   </label>
+  <span id="customRange" class="custom-range-hidden" style="gap:6px; align-items:center;">
+    <input type="datetime-local" id="rangeFrom" />
+    <span style="color:var(--muted)">→</span>
+    <input type="datetime-local" id="rangeTo" />
+    <button id="applyCustomBtn">Apply</button>
+  </span>
+  <button id="resetZoomBtn" style="display:none">Reset zoom</button>
   <label>Refresh:
     <select id="refreshSelect">
       <option value="10">10s</option>
@@ -263,6 +277,24 @@ const chart = new Chart(ctx, {
       tooltip: {
         callbacks: {
           title: items => new Date(items[0].parsed.x).toLocaleString(),
+        },
+      },
+      zoom: {
+        zoom: {
+          drag: { enabled: true, backgroundColor: 'rgba(56,189,248,0.15)' },
+          mode: 'x',
+          onZoomComplete({ chart }) {
+            if (_suppressZoomComplete) return;
+            const { min, max } = chart.scales.x;
+            const toLocal = ts => new Date(ts - new Date().getTimezoneOffset() * 60000)
+              .toISOString().slice(0, 16);
+            document.getElementById('rangeFrom').value = toLocal(min);
+            document.getElementById('rangeTo').value   = toLocal(max);
+            customMode = true;
+            document.getElementById('rangeSelect').value = 'custom';
+            document.getElementById('customRange').classList.remove('custom-range-hidden');
+            document.getElementById('resetZoomBtn').style.display = '';
+          },
         },
       },
     },
@@ -477,7 +509,23 @@ document.getElementById('saveApiHostBtn').addEventListener('click', () => {
 // --- State ---
 let refreshTimer = null;
 let sessionTitle = 'MCNet checker';
+let customMode = false;
 let intervalSeconds = 60;
+let _suppressZoomComplete = false;
+
+function getRangeParams() {
+  if (customMode) {
+    const from = document.getElementById('rangeFrom').value;
+    const to   = document.getElementById('rangeTo').value;
+    if (from && to) {
+      const since = new Date(from).getTime() / 1000;
+      const until = new Date(to).getTime() / 1000;
+      return `since=${since}&until=${until}`;
+    }
+  }
+  const hours = parseFloat(document.getElementById('rangeSelect').value);
+  return `hours=${hours}`;
+}
 
 async function fetchStatus() {
   try {
@@ -491,10 +539,8 @@ async function fetchStatus() {
 }
 
 async function refresh() {
-  const hours = parseFloat(document.getElementById('rangeSelect').value);
-
   try {
-    const r = await fetch(getApiBase() + `/api/v1/samples?hours=${hours}`);
+    const r = await fetch(getApiBase() + `/api/v1/samples?${getRangeParams()}`);
     const samples = await r.json();
 
     if (!samples.length) {
@@ -554,22 +600,7 @@ async function refresh() {
     const avgLat = nLat ? sumLat / nLat : null;
     const avgJitter = nJitter ? sumJitter / nJitter : null;
     const lastLoss = allEnabled[allEnabled.length - 1].loss_pct;
-
-    // Time-based uptime: per-host, then averaged across enabled hosts.
-    // Sleep gaps inflate expectedSlots for each host, correctly lowering uptime.
-    let uptimePct = null;
-    {
-      let sumUptime = 0, countHosts = 0;
-      for (const addr of enabledHosts) {
-        const pts = byHost[addr];
-        if (!pts || !pts.length) continue;
-        const hostOk = pts.filter(s => s.loss_pct < 100).length;
-        const hExpected = (pts[pts.length - 1].ts - pts[0].ts + intervalSeconds) / intervalSeconds;
-        sumUptime += Math.min(100, hostOk / hExpected * 100);
-        countHosts++;
-      }
-      if (countHosts) uptimePct = sumUptime / countHosts;
-    }
+    const uptimePct = allEnabled.length ? okCount / allEnabled.length * 100 : null;
 
     const elLat = document.getElementById('cardLatency');
     const elLoss = document.getElementById('cardLoss');
@@ -599,7 +630,35 @@ function scheduleRefresh() {
   if (secs > 0) refreshTimer = setInterval(refresh, secs * 1000);
 }
 
-document.getElementById('rangeSelect').addEventListener('change', refresh);
+document.getElementById('rangeSelect').addEventListener('change', () => {
+  const val = document.getElementById('rangeSelect').value;
+  if (val === 'custom') {
+    customMode = true;
+    document.getElementById('customRange').classList.remove('custom-range-hidden');
+  } else {
+    customMode = false;
+    document.getElementById('customRange').classList.add('custom-range-hidden');
+    document.getElementById('resetZoomBtn').style.display = 'none';
+    _suppressZoomComplete = true;
+    chart.resetZoom();
+    setTimeout(() => { _suppressZoomComplete = false; }, 100);
+    refresh();
+  }
+});
+
+document.getElementById('applyCustomBtn').addEventListener('click', refresh);
+
+document.getElementById('resetZoomBtn').addEventListener('click', () => {
+  _suppressZoomComplete = true;
+  chart.resetZoom();
+  setTimeout(() => { _suppressZoomComplete = false; }, 100);
+  document.getElementById('resetZoomBtn').style.display = 'none';
+  customMode = false;
+  document.getElementById('customRange').classList.add('custom-range-hidden');
+  document.getElementById('rangeSelect').value = '1';
+  refresh();
+});
+
 document.getElementById('refreshSelect').addEventListener('change', scheduleRefresh);
 
 document.getElementById('deleteBtn').addEventListener('click', async () => {
