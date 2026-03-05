@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import config
 import database
-from collector import collect_sample
+from collector import collect_sample_data
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -17,11 +17,15 @@ def _collect_all() -> None:
         return
     slot_ts = time.time()
     with ThreadPoolExecutor(max_workers=len(hosts)) as pool:
-        futures = {pool.submit(collect_sample, h, slot_ts): h for h in hosts}
+        futures = {pool.submit(collect_sample_data, h, slot_ts): h for h in hosts}
+        results = []
         for f in as_completed(futures):
-            exc = f.exception()
-            if exc:
-                print(f"[SCHEDULER] Uncaught error for {futures[f]}: {exc}")
+            try:
+                results.append(f.result())
+            except Exception as exc:
+                print(f"[SCHEDULER] Error for {futures[f]}: {exc}")
+    if results:
+        database.insert_samples_batch(results)
 
 
 def start() -> None:
