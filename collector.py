@@ -99,5 +99,40 @@ def _stddev(values: list[float]) -> float:
     return math.sqrt(variance)
 
 
+def collect_sample_data(host: str, ts: float) -> tuple:
+    """Ping host and return sample tuple. Does NOT write to DB."""
+    count = config.PING_COUNT
+    timeout = count * 3 + 5
+
+    try:
+        kwargs = {}
+        if IS_WINDOWS:
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            _build_ping_cmd(host, count),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            **kwargs,
+        )
+        output = result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        print(f"[COLLECTOR] Timeout pinging {host}")
+        return (ts, host, count, 0, 100.0, None, None, None, None)
+    except Exception as e:
+        print(f"[COLLECTOR] Error: {e}")
+        return (ts, host, count, 0, 100.0, None, None, None, None)
+
+    sent, received, loss_pct = _parse_loss(output, count)
+    avg_ms, min_ms, max_ms, jitter_ms = _parse_rtt(output)
+
+    print(
+        f"[COLLECTOR] host={host} loss={loss_pct:.1f}% "
+        f"avg={avg_ms:.2f}ms" if avg_ms is not None else
+        f"[COLLECTOR] host={host} loss={loss_pct:.1f}% avg=N/A"
+    )
+    return (ts, host, sent, received, loss_pct, avg_ms, min_ms, max_ms, jitter_ms)
+
+
 def _save_failed(host: str, count: int, ts: Optional[float] = None) -> None:
     database.insert_sample(host, count, 0, 100.0, None, None, None, None, ts)
