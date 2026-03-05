@@ -9,6 +9,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -106,6 +107,17 @@ def insert_sample(
                (ts, host, sent, received, loss_pct, avg_ms, min_ms, max_ms, jitter_ms)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (ts, host, sent, received, loss_pct, avg_ms, min_ms, max_ms, jitter_ms),
+        )
+        conn.commit()
+
+
+def insert_samples_batch(samples: list[tuple]) -> None:
+    with _connect() as conn:
+        conn.executemany(
+            """INSERT INTO samples
+               (ts, host, sent, received, loss_pct, avg_ms, min_ms, max_ms, jitter_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            samples,
         )
         conn.commit()
 
