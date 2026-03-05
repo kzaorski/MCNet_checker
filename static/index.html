@@ -532,7 +532,6 @@ async function fetchStatus() {
   try {
     const r = await fetch(getApiBase() + '/api/v1/status');
     const d = await r.json();
-    sessionTitle = d.session.replace('MCNet_checker_', 'MCNet checker ');
     document.getElementById('title').textContent = sessionTitle;
     document.title = sessionTitle;
     if (d.config?.interval_seconds) intervalSeconds = d.config.interval_seconds;
